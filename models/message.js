@@ -16,6 +16,7 @@ const messageSchema = new mongoose.Schema({
   message: { type: String },
   timestamp: { type: Date, default: Date.now, index: true },
   imageUrl: { type: String },
+  seen: { type: Boolean, default: false }, // Add seen field
 });
 
 // Create the Message model from the schema

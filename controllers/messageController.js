@@ -1,4 +1,5 @@
 const Message = require("../models/message");
+const User = require("../models/user");
 
 exports.sendMessage = async (req, res) => {
   console.log("Request body:", req.body);
@@ -62,5 +63,50 @@ exports.deleteMessages = async (req, res) => {
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+/*
+exports.deleteMessages = async (req, res) => {
+  const { messages } = req.body;
+  console.log("Messages to delete:", messages); // Log incoming request data
+
+  try {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "Invalid request body" });
+    }
+
+    const result = await Message.deleteMany({ _id: { $in: messages } });
+    console.log("Delete result:", result); // Log result of the delete operation
+
+    res.json({ message: "Messages deleted successfully" });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+*/
+
+exports.markMessageSeen = async (req, res) => {
+  const { messageId } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const message = await Message.findOneAndUpdate(
+      { _id: messageId, recepientId: userId },
+      { seen: true },
+      { new: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    console.log("Message marked as seen:", message); // Log the updated message
+    res.json(message);
+  } catch (error) {
+    console.error("Error marking message as seen:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
