@@ -46,7 +46,7 @@ exports.getMessages = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
+/*
 exports.deleteMessages = async (req, res) => {
   const { messages } = req.body;
   console.log("Messages to delete:", messages); // Log incoming request data
@@ -60,6 +60,30 @@ exports.deleteMessages = async (req, res) => {
     console.log("Delete result:", result); // Log result of the delete operation
 
     res.json({ message: "Messages deleted successfully" });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+*/
+
+exports.deleteMessages = async (req, res) => {
+  const { messageId } = req.params;
+  console.log("Message ID to delete:", messageId); // Log incoming request data
+
+  try {
+    if (!messageId) {
+      return res.status(400).json({ error: "Invalid message ID" });
+    }
+
+    const result = await Message.deleteOne({ _id: messageId });
+    console.log("Delete result:", result); // Log result of the delete operation
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    res.json({ message: "Message deleted successfully" });
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ error: "Internal Server Error" });

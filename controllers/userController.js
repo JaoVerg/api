@@ -1,23 +1,21 @@
 const User = require("../models/user");
-const userService = require("../services/userService");
-// Get all users except the logged-in user
+
 exports.getUsers = async (req, res) => {
   const loggedInUserId = req.params.userId;
 
   try {
-    const users = await userService.getUsersExceptLoggedIn(loggedInUserId);
+    const users = await User.find({ _id: { $ne: loggedInUserId } });
     res.status(200).json(users);
   } catch (err) {
-    console.error("Error retrieving users", err);
+    console.log("Error retrieving users", err);
     res.status(500).json({ message: "Error retrieving users" });
   }
 };
 
-// Get a user by ID
 exports.getUserById = async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await userService.getUserById(userId);
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -28,76 +26,126 @@ exports.getUserById = async (req, res) => {
   }
 };
 
-// Send a friend request
 exports.sendFriendRequest = async (req, res) => {
   const { currentUserId, selectedUserId } = req.body;
 
   try {
-    await userService.sendFriendRequest(currentUserId, selectedUserId);
+    await User.findByIdAndUpdate(selectedUserId, {
+      $push: { friendRequest: currentUserId },
+    });
+
+    await User.findByIdAndUpdate(currentUserId, {
+      $push: { sentFriendRequest: selectedUserId },
+    });
+
     res.sendStatus(200);
   } catch (error) {
     res.sendStatus(500);
   }
 };
 
-// Get friend requests for a user
 exports.getFriendRequests = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const friendRequests = await userService.getFriendRequests(userId);
-    res.json(friendRequests);
+    const user = await User.findById(userId)
+      .populate("friendRequest", "name email image")
+      .lean();
+    res.json(user.friendRequest);
   } catch (error) {
-    console.error(error);
+    console.log(error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-// Accept a friend request
 exports.acceptFriendRequest = async (req, res) => {
   const { senderId, recipientId } = req.body;
 
   try {
-    await userService.acceptFriendRequest(senderId, recipientId);
+    const sender = await User.findById(senderId);
+    const recipient = await User.findById(recipientId);
+
+    if (!sender) return res.status(404).json({ message: "Sender not found" });
+    if (!recipient)
+      return res.status(404).json({ message: "Recipient not found" });
+
+    sender.friends.push(recipientId);
+    recipient.friends.push(senderId);
+
+    recipient.friendRequest = recipient.friendRequest.filter(
+      (req) => req.toString() !== senderId.toString()
+    );
+    sender.sentFriendRequest = sender.sentFriendRequest.filter(
+      (req) => req.toString() !== recipientId.toString()
+    );
+
+    await sender.save();
+    await recipient.save();
+
     res.status(200).json({ message: "Friend Request accepted successfully" });
   } catch (error) {
-    console.error("Error accepting friend request", error);
+    console.log("Error accepting friend request", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-// Get accepted friends for a user
 exports.getAcceptedFriends = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const acceptedFriends = await userService.getAcceptedFriends(userId);
-    res.json(acceptedFriends);
+    const user = await User.findById(userId).populate(
+      "friends",
+      "name email image"
+    );
+    res.json(user.friends);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// Get user details by ID
 exports.getUserDetails = async (req, res) => {
   const { userId } = req.params;
 
   try {
-    const userDetails = await userService.getUserDetails(userId);
-    res.json(userDetails);
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(user);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
 
-// Cancel a friend request
 exports.cancelFriendRequest = async (req, res) => {
   const { currentUserId, selectedUserId } = req.body;
 
   try {
-    await userService.cancelFriendRequest(currentUserId, selectedUserId);
+    // Find the current user and update sentFriendRequest
+    const currentUser = await User.findByIdAndUpdate(
+      currentUserId,
+      { $pull: { sentFriendRequest: selectedUserId } },
+      { new: true }
+    );
+
+    if (!currentUser) {
+      return res.status(404).json({ error: "Current user not found" });
+    }
+
+    // Find the selected user and update friendRequest
+    const selectedUser = await User.findByIdAndUpdate(
+      selectedUserId,
+      { $pull: { friendRequest: currentUserId } },
+      { new: true }
+    );
+
+    if (!selectedUser) {
+      return res.status(404).json({ error: "Selected user not found" });
+    }
+
+    // Respond with success message
     res.status(200).json({ message: "Friend request canceled" });
   } catch (error) {
     console.error("Error canceling friend request:", error);
@@ -105,34 +153,78 @@ exports.cancelFriendRequest = async (req, res) => {
   }
 };
 
-// Search users who are not friends or in friend requests
 exports.searchUsers = async (req, res) => {
   try {
     const { userId } = req.params;
-    const users = await userService.searchUsers(userId);
+
+    // Find the current user
+    const currentUser = await User.findById(userId)
+      .populate("friends")
+      .populate("friendRequest")
+      .populate("sentFriendRequest");
+
+    if (!currentUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get IDs of friends, friend requests, and sent friend requests
+    const friendsIds = currentUser.friends.map((friend) => friend._id);
+    const friendRequestIds = currentUser.friendRequest.map(
+      (request) => request._id
+    );
+    const sentFriendRequestIds = currentUser.sentFriendRequest.map(
+      (request) => request._id
+    );
+
+    // Find users who are not friends, and not in friend requests or sent friend requests
+    const users = await User.find({
+      _id: {
+        $nin: [
+          userId,
+          ...friendsIds,
+          ...friendRequestIds,
+          ...sentFriendRequestIds,
+        ],
+      },
+    });
+
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Decline a friend request
 exports.declineFriendRequest = async (req, res) => {
   try {
     const { userId, requestId } = req.params;
-    await userService.declineFriendRequest(userId, requestId);
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).send("User not found");
+
+    user.friendRequest = user.friendRequest.filter(
+      (request) => request.toString() !== requestId
+    );
+    await user.save();
+
     res.status(200).send("Friend request declined");
   } catch (error) {
     res.status(500).send("Server error");
   }
 };
 
-// Delete a friend
 exports.deleteFriend = async (req, res) => {
   const { userId, friendId } = req.params;
 
   try {
-    await userService.deleteFriend(userId, friendId);
+    // Remove friendId from user's friends array
+    await User.findByIdAndUpdate(userId, {
+      $pull: { friends: friendId },
+    });
+
+    // Also remove userId from friend's friends array
+    await User.findByIdAndUpdate(friendId, {
+      $pull: { friends: userId },
+    });
+
     res.status(200).json({ message: "Friend deleted successfully" });
   } catch (error) {
     console.error("Error deleting friend:", error);

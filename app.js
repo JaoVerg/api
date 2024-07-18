@@ -13,6 +13,10 @@ app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+app.get("/", (req, res) => {
+  res.send("Hello, world!");
+});
+
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/message", messageRoutes);

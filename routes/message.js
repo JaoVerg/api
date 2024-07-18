@@ -9,6 +9,6 @@ const {
 
 router.post("/:recepientId", sendMessage);
 router.get("/:senderId/:recepientId", getMessages);
-router.delete("/", deleteMessages);
+router.delete("/:messageId", deleteMessages);
 router.put("/:messageId/seen", markMessageSeen);
 module.exports = router;
